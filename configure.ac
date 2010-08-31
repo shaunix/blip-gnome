@@ -15,6 +15,7 @@ AC_SUBST(BLIP_PLUGINS_DIR)
 
 AC_CONFIG_FILES([
 Makefile
+gnomeapp/Makefile
 jhbuild/Makefile
 ])
 
