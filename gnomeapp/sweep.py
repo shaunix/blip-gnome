@@ -22,7 +22,6 @@ import ConfigParser
 import re
 import os
 
-import blip.config
 import blip.db
 import blip.utils
 

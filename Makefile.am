@@ -1,1 +1,4 @@
-SUBDIRS = gnomeapp jhbuild
+SUBDIRS =		\
+	gnomeapp	\
+	gnomedoc	\
+	jhbuild
