@@ -108,9 +108,10 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             fnames = ([doc_module + '.xml'] +
                       makefile.get('DOC_INCLUDES', '').split() +
                       makefile.get('DOC_ENTITIES', '').split() )
-            document.data['xmlfiles'] = sorted (fnames)
+            xmlfiles = sorted (fnames)
+            document.data['scm_files'] = xmlfiles
 
-            files = [os.path.join (document.scm_dir, f) for f in document.data['xmlfiles']]
+            files = [os.path.join (document.scm_dir, f) for f in xmlfiles]
             if len(files) == 0:
                 document.mod_score = 0
             else:
@@ -140,6 +141,13 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         for document in self.documents:
             if document.subtype == u'gdu-docbook':
                 GnomeDocScanner.process_docbook (document, self.scanner)
+            rev = blip.db.Revision.get_last_revision (branch=document.parent,
+                                                      files=[os.path.join (document.scm_dir, fname)
+                                                             for fname in document.data.get ('scm_files', [])])
+            if rev is not None:
+                document.mod_datetime = rev.datetime
+                document.mod_person = rev.person
+            document.updated = datetime.datetime.utcnow ()
         for translation in self.translations:
             if translation.subtype == u'xml2po':
                 GnomeDocScanner.process_xml2po (translation, self.scanner)
