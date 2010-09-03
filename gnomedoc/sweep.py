@@ -90,26 +90,37 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
 
             stamp.log ()
 
-            if not 'DOC_MODULE' in makefile:
-                blip.utils.warn ('DOC_MODULE missing in %s' % rel_ch)
+            if 'DOC_MODULE' in makefile:
+                doc_id = makefile['DOC_MODULE']
+                doc_type = u'docbook'
+            elif 'DOC_ID' in makefile:
+                doc_id = makefile['DOC_ID']
+                doc_type = u'mallard'
+            else:
                 return
-            doc_module = makefile['DOC_MODULE']
-            if doc_module == '@PACKAGE_NAME@':
-                doc_module = branch.data.get ('PACKAGE_NAME', '@PACKAGE_NAME@')
-            ident = u'/'.join(['/doc', bserver, bmodule, doc_module, bbranch])
+            if doc_id == '@PACKAGE_NAME@':
+                doc_id = branch.data.get ('PACKAGE_NAME', '@PACKAGE_NAME@')
+            ident = u'/'.join(['/doc', bserver, bmodule, doc_id, bbranch])
             document = blip.db.Branch.get_or_create (ident, u'Document')
             document.parent = branch
 
             for key in ('scm_type', 'scm_server', 'scm_module', 'scm_branch', 'scm_path'):
                 setattr (document, key, getattr (branch, key))
-            document.subtype = u'gdu-docbook'
+            document.subtype = u'gdu-' + doc_type
             document.scm_dir = blip.utils.relative_path (os.path.join (dirname, 'C'),
                                                          self.scanner.repository.directory)
-            document.scm_file = doc_module + '.xml'
+            if doc_type == 'docbook':
+                document.scm_file = doc_id + '.xml'
+            else:
+                # FIXME: plugin sets won't have this
+                document.scm_file = u'index.page'
 
-            fnames = ([doc_module + '.xml'] +
-                      makefile.get('DOC_INCLUDES', '').split() +
-                      makefile.get('DOC_ENTITIES', '').split() )
+            fnames = (makefile.get('DOC_PAGES', '').split() +
+                      makefile.get('DOC_INCLUDES', '').split())
+            if doc_type == u'docbook':
+                fnames.append (doc_id + '.xml')
+            document.data['xml2po_files'] = [os.path.join ('C', fname) for fname in fnames]
+            fnames += makefile.get('DOC_ENTITIES', '').split()
             xmlfiles = sorted (fnames)
             document.data['scm_files'] = xmlfiles
 
@@ -143,6 +154,8 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         for document in self.documents:
             if document.subtype == u'gdu-docbook':
                 GnomeDocScanner.process_docbook (document, self.scanner)
+            elif document.subtype == u'gdu-mallard':
+                GnomeDocScanner.process_mallard (document, self.scanner)
             rev = blip.db.Revision.get_last_revision (branch=document.parent,
                                                       files=[os.path.join (document.scm_dir, fname)
                                                              for fname in document.data.get ('scm_files', [])])
@@ -158,9 +171,8 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     def process_docbook (cls, document, scanner):
         filename = os.path.join (scanner.repository.directory,
                                  document.scm_dir, document.scm_file)
-        rel_ch = blip.utils.relative_path (filename,
-                                           scanner.repository.directory)
-        blip.utils.log ('Processing file %s' % rel_ch)
+        rel_scm = blip.utils.relative_path (filename, blinq.config.scm_dir)
+        blip.utils.log ('Processing %s' % rel_scm)
 
         title = None
         abstract = None
@@ -176,12 +188,12 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         blip.db.Error.clear_error (document.ident)
         seen = 0
         document.data['status'] = '00none'
-        for node in blip.data.xmliter (root):
+        for node in xmliter (root):
             if node.type != 'element':
                 continue
             if node.name[-4:] == 'info':
                 seen += 1
-                infonodes = list (blip.data.xmliter (node))
+                infonodes = list (xmliter (node))
                 i = 0
                 while i < len(infonodes):
                     infonode = infonodes[i]
@@ -197,14 +209,14 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                         if infonode.prop ('revision') == document.parent.data.get ('series'):
                             document.data['status'] = infonode.prop ('role')
                     elif infonode.name == 'authorgroup':
-                        infonodes.extend (list (blip.data.xmliter (infonode)))
+                        infonodes.extend (list (xmliter (infonode)))
                     elif infonode.name in ('author', 'editor', 'othercredit'):
                         cr_name, cr_email = personname (infonode)
                         maint = (infonode.prop ('role') == 'maintainer')
                         credits.append ((cr_name, cr_email, infonode.name, maint))
                     elif infonode.name == 'collab':
                         cr_name = None
-                        for ch in blip.data.xmliter (infonode):
+                        for ch in xmliter (infonode):
                             if ch.type == 'element' and ch.name == 'collabname':
                                 cr_name = normalize (ch.getContent ())
                         if cr_name is not None:
@@ -216,7 +228,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                                               None, infonode.name, maint))
                     elif infonode.name == 'publisher':
                         cr_name = None
-                        for ch in blip.data.xmliter (infonode):
+                        for ch in xmliter (infonode):
                             if ch.type == 'element' and ch.name == 'publishername':
                                 cr_name = normalize (ch.getContent ())
                         if cr_name is not None:
@@ -260,13 +272,59 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         document.set_relations (blip.db.DocumentEntity, rels)
 
     @classmethod
+    def process_mallard (cls, document, scanner):
+        MALLARD_NS = 'http://projectmallard.org/1.0/'
+
+        for basename in document.data.get ('scm_files', []):
+            filename = os.path.join (scanner.repository.directory,
+                                     document.scm_dir, basename)
+            with blip.db.Timestamp.stamped (filename, scanner.repository) as stamp:
+                stamp.check (scanner.request.get_tool_option ('timestamps'))
+                stamp.log ()
+
+                title = None
+                desc = None
+                credits = []
+                try:
+                    ctxt = libxml2.newParserCtxt ()
+                    xmldoc = ctxt.ctxtReadFile (filename, None, 0)
+                    xmldoc.xincludeProcess ()
+                    root = xmldoc.getRootElement ()
+                except Exception, e:
+                    blip.db.Error.set_error (document.ident, unicode (e),
+                                             ctxt=document.scm_file)
+                    return
+                blip.db.Error.clear_error (document.ident,
+                                           ctxt=document.scm_file)
+
+                if not _is_ns_name (root, MALLARD_NS, 'page'):
+                    continue
+                for node in xmliter (root):
+                    if node.type != 'element':
+                        continue
+                    if _is_ns_name (node, MALLARD_NS, 'info'):
+                        for infonode in xmliter (node):
+                            if infonode.type != 'element':
+                                continue
+                            if _is_ns_name (infonode, MALLARD_NS, 'title'):
+                                if infonode.prop ('type') == 'text':
+                                    title = normalize (infonode.getContent ())
+                            elif _is_ns_name (infonode, MALLARD_NS, 'desc'):
+                                desc = normalize (infonode.getContent ())
+                    elif _is_ns_name (node, MALLARD_NS, 'title'):
+                        if title is None:
+                            title = normalize (node.getContent ())
+
+                if basename == 'index.page':
+                    if title is not None:
+                        document.name = blip.utils.utf8dec (title)
+                    if desc is not None:
+                        document.desc = blip.utils.utf8dec (desc)
+
+    @classmethod
     def process_xml2po (cls, translation, scanner):
         filename = os.path.join (scanner.repository.directory,
                                  translation.scm_dir, translation.scm_file)
-        rel_ch = blip.utils.relative_path (filename,
-                                           scanner.repository.directory)
-        blip.utils.log ('Processing file %s' % rel_ch)
-
         potfile = cls.get_potfile (translation, scanner)
         if potfile is None:
             return None
@@ -324,19 +382,9 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         if cls.potfiles.has_key (indir):
             return cls.potfiles[indir]
 
-        makefile = blip.parsers.get_parsed_file (blip.parsers.automake.Automake,
-                                                 os.path.join (indir, 'Makefile.am'))
-        doc_module = makefile['DOC_MODULE']
-        if doc_module == '@PACKAGE_NAME@':
-            doc_module = domain.parent.data.get ('PACKAGE_NAME', '@PACKAGE_NAME@')
-        docfiles = [os.path.join ('C', fname)
-                    for fname
-                    in ([doc_module+'.xml'] +
-                        makefile.get('DOC_INCLUDES', '').split() +
-                        makefile.get('DOC_PAGES', '').split()
-                        )]
-        potname = doc_module
-        potfile = potname + u'.pot'
+        doc_id = translation.ident.split('/')[-2]
+        doc_files = translation.parent.data.get ('xml2po_files', [])
+        potfile = doc_id + u'.pot'
         of = blip.db.OutputFile.select_one (type=u'l10n', ident=domain.ident, filename=potfile)
         if of is None:
             of = blip.db.OutputFile (type=u'l10n', ident=domain.ident, filename=potfile,
@@ -355,7 +403,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         if not os.path.exists (potdir):
             os.makedirs (potdir)
 
-        cmd = 'xml2po -e -o "' + potfile_abs + '" "' + '" "'.join(docfiles) + '"'
+        cmd = 'xml2po -e -o "' + potfile_abs + '" "' + '" "'.join(doc_files) + '"'
         owd = os.getcwd ()
         try:
             os.chdir (indir)
@@ -402,7 +450,7 @@ def personname (node):
     name = [None, None, None, None, None]
     namestr = None
     email = None
-    for child in blip.data.xmliter (node):
+    for child in xmliter (node):
         if child.type != 'element':
             continue
         if child.name == 'personname':
@@ -421,3 +469,18 @@ def personname (node):
             name.remove(None)
         namestr = ' '.join (name)
     return (normalize (namestr), normalize (email))
+
+def _get_ns (node):
+    ns = node.ns()
+    if ns is not None:
+        return ns.getContent ()
+    return None
+
+def _is_ns_name (node, ns, name):
+    return (_get_ns (node) == ns and node.name == name)
+
+def xmliter (node):
+    child = node.children
+    while child:
+        yield child
+        child = child.next
