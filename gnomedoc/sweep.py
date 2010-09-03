@@ -88,6 +88,8 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             if not is_gdu_doc:
                 return
 
+            stamp.log ()
+
             if not 'DOC_MODULE' in makefile:
                 blip.utils.warn ('DOC_MODULE missing in %s' % rel_ch)
                 return
@@ -286,6 +288,9 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 potmd5 = potfile.data.get ('md5', None)
                 if pomd5 is not None and pomd5 == potmd5:
                     raise
+
+            stamp.log ()
+
             makedir = os.path.join (scanner.repository.directory,
                                     os.path.dirname (translation.scm_dir))
             cmd = 'msgmerge "%s" "%s" 2>&1' % (
@@ -343,7 +348,6 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         if not scanner.request.get_tool_option ('timestamps'):
             dt = of.data.get ('mod_datetime')
             if dt is not None and dt == domain.parent.mod_datetime:
-                blip.utils.log ('Skipping POT file %s' % potfile_rel)
                 cls.potfiles[indir] = of
                 return of
 

@@ -53,7 +53,9 @@ class KeyFileScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 if app is not None:
                     self.scanner.add_child (app)
                 raise
-                     
+
+            stamp.log ()
+
             if basename.endswith ('.desktop.in.in'):
                 base = os.path.basename (filename)[:-14]
             else:
