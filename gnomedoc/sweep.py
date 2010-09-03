@@ -299,6 +299,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
 
                 if not _is_ns_name (root, MALLARD_NS, 'page'):
                     continue
+                pageid = root.prop ('id')
                 for node in xmliter (root):
                     if node.type != 'element':
                         continue
@@ -315,7 +316,16 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                         if title is None:
                             title = normalize (node.getContent ())
 
-                if basename == 'index.page':
+                if pageid is not None:
+                    ident = u'/page/' + pageid + document.ident
+                    page = blip.db.Branch.get_or_create (ident, u'DocumentPage')
+                    page.parent = document
+                    if title is not None:
+                        page.name = blip.utils.utf8dec (title)
+                    if desc is not None:
+                        page.desc = blip.utils.utf8dec (desc)
+
+                if pageid == 'index':
                     if title is not None:
                         document.name = blip.utils.utf8dec (title)
                     if desc is not None:
