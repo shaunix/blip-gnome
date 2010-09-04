@@ -99,7 +99,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             else:
                 return
             if doc_id == '@PACKAGE_NAME@':
-                doc_id = branch.data.get ('PACKAGE_NAME', '@PACKAGE_NAME@')
+                doc_id = branch.data.get ('pkgname', '@PACKAGE_NAME@')
             ident = u'/'.join(['/doc', bserver, bmodule, doc_id, bbranch])
             document = blip.db.Branch.get_or_create (ident, u'Document')
             document.parent = branch

@@ -113,7 +113,7 @@ class KeyFileScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             if keyfile.has_key ('Desktop Entry', 'Icon'):
                 iconname = keyfile.get_value ('Desktop Entry', 'Icon')
                 if iconname == '@PACKAGE_NAME@':
-                    iconname = branch.data.get ('PACKAGE_NAME', '@PACKAGE_NAME@')
+                    iconname = branch.data.get ('pkgname', '@PACKAGE_NAME@')
                 self._try_icon_name = iconname
 
     def FIXMEpost_process (self, **kw):
