@@ -44,6 +44,21 @@ import blip.parsers.po
 
 import blip.plugins.modules.sweep
 
+_STATUSES = {'none':       '00',
+             'stub':       '10',
+             'incomplete': '20',
+             'draft':      '30',
+             'outdated':   '40',
+             'review':     '50',
+             'candidate':  '60',
+             'final':      '70'}
+def get_status (status):
+    if _STATUSES.has_key (status):
+        return _STATUSES[status] + status
+    else:
+        return '00none'
+
+
 class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     def __init__ (self, scanner):
         self.documents = []
@@ -99,7 +114,9 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             else:
                 return
             if doc_id == '@PACKAGE_NAME@':
-                doc_id = branch.data.get ('pkgname', '@PACKAGE_NAME@')
+                doc_id = branch.data.get ('pkgname')
+            if doc_id is None:
+                return
             ident = u'/'.join(['/doc', bserver, bmodule, doc_id, bbranch])
             document = blip.db.Branch.get_or_create (ident, u'Document')
             document.parent = branch
@@ -110,7 +127,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             document.scm_dir = blip.utils.relative_path (os.path.join (dirname, 'C'),
                                                          self.scanner.repository.directory)
             if doc_type == 'docbook':
-                document.scm_file = doc_id + '.xml'
+                document.scm_file = blip.utils.utf8dec (doc_id) + u'.xml'
             else:
                 # FIXME: plugin sets won't have this
                 document.scm_file = u'index.page'
@@ -206,8 +223,8 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                     elif infonode.name == 'abstract' and infonode.prop('role') == 'description':
                         abstract = infonode.getContent ()
                     elif infonode.name == 'releaseinfo':
-                        if infonode.prop ('revision') == document.parent.data.get ('series'):
-                            document.data['status'] = infonode.prop ('role')
+                        if infonode.prop ('revision') == document.parent.data.get ('pkgseries'):
+                            document.data['docstatus'] = get_status (infonode.prop ('role'))
                     elif infonode.name == 'authorgroup':
                         infonodes.extend (list (xmliter (infonode)))
                     elif infonode.name in ('author', 'editor', 'othercredit'):
@@ -300,6 +317,8 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 if not _is_ns_name (root, MALLARD_NS, 'page'):
                     continue
                 pageid = root.prop ('id')
+                pkgseries = document.parent.data.get ('pkgseries', None)
+                revision = {}
                 for node in xmliter (root):
                     if node.type != 'element':
                         continue
@@ -312,24 +331,78 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                                     title = normalize (infonode.getContent ())
                             elif _is_ns_name (infonode, MALLARD_NS, 'desc'):
                                 desc = normalize (infonode.getContent ())
+                            elif _is_ns_name (infonode, MALLARD_NS, 'revision'):
+                                if pkgseries is not None:
+                                    for prop in ('version', 'docversion', 'pkgversion'):
+                                        if infonode.prop (prop) == pkgseries:
+                                            revdate = infonode.prop ('date')
+                                            revstatus = infonode.prop ('status')
+                                            if (not revision.has_key (prop)) or (revdate > revision[prop][0]):
+                                                revision[prop] = (revdate, revstatus)
+                            elif _is_ns_name (infonode, MALLARD_NS, 'credit'):
+                                types = infonode.prop ('type')
+                                if isinstance (types, basestring):
+                                    types = types.split ()
+                                else:
+                                    types = []
+                                crname = cremail = None
+                                for crnode in xmliter (infonode):
+                                    if _is_ns_name (crnode, MALLARD_NS, 'name'):
+                                        crname = normalize (crnode.getContent ())
+                                    elif _is_ns_name (crnode, MALLARD_NS, 'email'):
+                                        cremail = normalize (crnode.getContent ())
+                                if crname is not None or cremail is not None:
+                                    credits.append ((crname, cremail, types))
                     elif _is_ns_name (node, MALLARD_NS, 'title'):
                         if title is None:
                             title = normalize (node.getContent ())
 
+                docstatus = None
+                docdate = None
                 if pageid is not None:
                     ident = u'/page/' + pageid + document.ident
                     page = blip.db.Branch.get_or_create (ident, u'DocumentPage')
                     page.parent = document
+                    for key in ('scm_type', 'scm_server', 'scm_module', 'scm_branch', 'scm_path', 'scm_dir'):
+                        setattr (page, key, getattr (document, key))
+                    page.scm_file = basename
                     if title is not None:
                         page.name = blip.utils.utf8dec (title)
                     if desc is not None:
                         page.desc = blip.utils.utf8dec (desc)
+                    for prop in ('pkgversion', 'docversion', 'version'):
+                        if revision.has_key (prop):
+                            (docdate, docstatus) = revision[prop]
+                            docstatus = get_status (docstatus)
+                            page.data['docstatus'] = docstatus
+                            page.data['docdate'] = docdate
 
                 if pageid == 'index':
                     if title is not None:
                         document.name = blip.utils.utf8dec (title)
                     if desc is not None:
                         document.desc = blip.utils.utf8dec (desc)
+                    document.data['docstatus'] = docstatus
+                    document.data['docdate'] = docdate
+                    rels = []
+                    for cr_name, cr_email, cr_types in credits:
+                        ent = None
+                        if cr_email is not None:
+                            ent = blip.db.Entity.get_or_create_email (cr_email)
+                        if ent is None:
+                            ident = u'/ghost/' + urllib.quote (cr_name)
+                            ent = blip.db.Entity.get_or_create (ident, u'Ghost')
+                            if ent.ident == ident:
+                                ent.name = blip.utils.utf8dec (cr_name)
+                        if ent is not None:
+                            ent.extend (name=blip.utils.utf8dec (cr_name))
+                            ent.extend (email=blip.utils.utf8dec (cr_email))
+                            rel = blip.db.DocumentEntity.set_related (document, ent)
+                            for badge in ('maintainer', 'author', 'editor', 'pulisher'):
+                                if badge in cr_types:
+                                    setattr (rel, badge, True)
+                            rels.append (rel)
+                    document.set_relations (blip.db.DocumentEntity, rels)
 
     @classmethod
     def process_xml2po (cls, translation, scanner):
