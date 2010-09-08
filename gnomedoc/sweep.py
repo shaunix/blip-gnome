@@ -277,14 +277,10 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 ent.extend (name=blip.utils.utf8dec (cr_name))
                 ent.extend (email=blip.utils.utf8dec (cr_email))
                 rel = blip.db.DocumentEntity.set_related (document, ent)
-                if cr_type in ('author', 'corpauthor'):
-                    rel.author = True
-                elif cr_type == 'editor':
-                    rel.editor = True
-                elif cr_type == 'publisher':
-                    rel.publisher = True
-                if cr_maint:
-                    rel.maintainer = True
+                rel.author = (cr_type in ('author', 'corpauthor'))
+                rel.editor = (cr_type == 'editor')
+                rel.publisher = (cr_type == 'publisher')
+                rel.maintainer = (cr_maint == True)
                 rels.append (rel)
         document.set_relations (blip.db.DocumentEntity, rels)
 
@@ -376,6 +372,24 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                             docstatus = get_status (docstatus)
                             page.data['docstatus'] = docstatus
                             page.data['docdate'] = docdate
+                    rels = []
+                    for cr_name, cr_email, cr_types in credits:
+                        ent = None
+                        if cr_email is not None:
+                            ent = blip.db.Entity.get_or_create_email (cr_email)
+                        if ent is None:
+                            ident = u'/ghost/' + urllib.quote (cr_name)
+                            ent = blip.db.Entity.get_or_create (ident, u'Ghost')
+                            if ent.ident == ident:
+                                ent.name = blip.utils.utf8dec (cr_name)
+                        if ent is not None:
+                            ent.extend (name=blip.utils.utf8dec (cr_name))
+                            ent.extend (email=blip.utils.utf8dec (cr_email))
+                            rel = blip.db.DocumentEntity.set_related (page, ent)
+                            for badge in ('maintainer', 'author', 'editor', 'pulisher'):
+                                setattr (rel, badge, badge in cr_types)
+                            rels.append (rel)
+                    page.set_relations (blip.db.DocumentEntity, rels)
 
                 if pageid == 'index':
                     if title is not None:
@@ -399,8 +413,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                             ent.extend (email=blip.utils.utf8dec (cr_email))
                             rel = blip.db.DocumentEntity.set_related (document, ent)
                             for badge in ('maintainer', 'author', 'editor', 'pulisher'):
-                                if badge in cr_types:
-                                    setattr (rel, badge, True)
+                                setattr (rel, badge, badge in cr_types)
                             rels.append (rel)
                     document.set_relations (blip.db.DocumentEntity, rels)
 
