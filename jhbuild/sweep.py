@@ -100,6 +100,9 @@ class JHBuildSetSweeper (blip.plugins.sets.sweep.SetSweeper):
         ident = u'/'.join (['/mod', servername, pkg_data['scm_module'], pkg_data['scm_branch']])
         record = blip.db.Branch.get_or_create (ident, u'Module')
         record.update (data)
+        print record.ident
+        if pkg_data.has_key ('autogenargs'):
+            record.data['autogenargs'] = pkg_data['autogenargs']
         pkg_data['__record__'] = record
 
         # FIXME: do we want to do deps from jhbuild?
@@ -157,6 +160,8 @@ class ModuleSet:
                     default_repo = repo_data
             elif node.tagName == 'autotools':
                 pkg_data = {'id' : node.getAttribute ('id')}
+                if node.hasAttribute ('autogenargs'):
+                    pkg_data['autogenargs'] = node.getAttribute ('autogenargs')
                 for child in node.childNodes:
                     if child.nodeType != child.ELEMENT_NODE:
                         continue
