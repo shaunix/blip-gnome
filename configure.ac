@@ -17,6 +17,7 @@ AC_CONFIG_FILES([
 Makefile
 gnomeapp/Makefile
 gnomedoc/Makefile
+intltool/Makefile
 jhbuild/Makefile
 ])
 
