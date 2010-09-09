@@ -31,7 +31,9 @@ except:
 
 import blinq.config
 
+import blip.parsers
 import blip.parsers.po
+import blip.parsers.autoconf
 
 import blip.plugins.modules.sweep
 
@@ -125,7 +127,7 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             try:
                 os.chdir (podir)
                 stamp.log ()
-                popo = blip.parsers.po (os.popen (cmd))
+                popo = blip.parsers.po (self.scanner.branch, os.popen (cmd))
                 stats = popo.get_stats ()
                 total = stats[0] + stats[1] + stats[2]
                 blip.db.Statistic.set_statistic (translation,
@@ -222,7 +224,7 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             # This keeps inconsequential differences in the header from
             # affecting the MD5.
             blanklink = False
-            popo = blip.parsers.po.Po ()
+            popo = blip.parsers.po.Po (scanner.branch)
             for line in open (potfile_abs):
                 if blanklink:
                     potmd5.update (line)

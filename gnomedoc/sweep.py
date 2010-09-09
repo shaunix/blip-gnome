@@ -92,7 +92,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 raise
 
             makefile = blip.parsers.get_parsed_file (blip.parsers.automake.Automake,
-                                                     filename)
+                                                     self.scanner.branch, filename)
 
             is_gdu_doc = False
             for line in makefile.get_lines ():
@@ -453,7 +453,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             owd = os.getcwd ()
             try:
                 os.chdir (makedir)
-                pofile = blip.parsers.po.Po (os.popen (cmd))
+                pofile = blip.parsers.po.Po (scanner.branch, os.popen (cmd))
                 stats = pofile.get_stats ()
                 total = stats[0] + stats[1] + stats[2]
                 blip.db.Statistic.set_statistic (translation,
@@ -513,7 +513,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             # This keeps inconsequential differences in the header from
             # affecting the MD5.
             blanklink = False
-            popo = blip.parsers.po.Po ()
+            popo = blip.parsers.po.Po (scanner.branch)
             for line in open (potfile_abs):
                 if blanklink:
                     potmd5.update (line)
