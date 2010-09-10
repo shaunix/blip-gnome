@@ -34,20 +34,50 @@ import blinq.config
 import blip.parsers
 import blip.parsers.po
 import blip.parsers.autoconf
+import blip.parsers.automake
 
 import blip.plugins.modules.sweep
 
 class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     def __init__ (self, scanner):
         self.podirs = []
+        self.gettet_package = None
         blip.plugins.modules.sweep.ModuleFileScanner.__init__ (self, scanner)
     
     def process_file (self, dirname, basename):
-        if basename != 'POTFILES.in':
+        if (dirname == self.scanner.repository.directory and
+            basename in ('configure.ac', 'configure.in')):
+            filename = os.path.join (dirname, basename)
+            with blip.db.Timestamp.stamped (filename, self.scanner.repository) as stamp:
+                stamp.check (self.scanner.request.get_tool_option ('timestamps'))
+                stamp.log ()
+                autoconf = blip.parsers.get_parsed_file (blip.parsers.autoconf.Autoconf,
+                                                         self.scanner.branch, filename)
+                self.gettext_package = autoconf.get_variable ('GETTEXT_PACKAGE')
+        elif basename == 'POTFILES.in':
+            self.podirs.append (dirname)
+
+    def post_process (self):
+        for dirname in self.podirs:
+            self.post_process_dir (dirname)
+
+    def post_process_dir (self, dirname):
+        bserver, bmodule, bbranch = self.scanner.branch.ident.split('/')[2:]
+
+        gettext_package = self.gettext_package
+        filename = os.path.join (dirname, 'Makefile.in.in')
+        if os.path.exists (filename):
+            makefile = blip.parsers.get_parsed_file (blip.parsers.automake.Automake,
+                                                     self.scanner.branch, filename)
+            if makefile.has_key ('GETTEXT_PACKAGE'):
+                gettext_package = makefile['GETTEXT_PACKAGE'].replace ('@GETTEXT_PACKAGE@',
+                                                                       self.gettext_package)
+
+        if self.gettext_package is None:
+            blip.utils.warn ('Could not determine gettext package for %s' % self.scanner.branch.ident)
             return
 
-        bserver, bmodule, bbranch = self.scanner.branch.ident.split('/')[2:]
-        ident = u'/'.join(['/i18n', bserver, bmodule, os.path.basename (dirname), bbranch])
+        ident = u'/'.join(['/i18n', bserver, bmodule, gettext_package, bbranch])
 
         domain = blip.db.Branch.get_or_create (ident, u'Domain')
         domain.parent = self.scanner.branch
@@ -65,7 +95,7 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             return
         blip.db.Error.clear_error (domain.ident)
 
-        filename = os.path.join (dirname, basename)
+        filename = os.path.join (dirname, 'POTFILES.in')
         translations = []
         with blip.db.Timestamp.stamped (filename, self.scanner.repository) as stamp:
             try:
@@ -95,9 +125,6 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
 
         for translation in translations:
             self.update_translation (translation)
-
-    def post_process (self):
-        pass
 
     def update_translation (self, translation):
         # FIXME: We regenerate potfile even if no translations are updated,
