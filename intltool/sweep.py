@@ -41,7 +41,7 @@ import blip.plugins.modules.sweep
 class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     def __init__ (self, scanner):
         self.podirs = []
-        self.gettet_package = None
+        self.gettext_package = None
         blip.plugins.modules.sweep.ModuleFileScanner.__init__ (self, scanner)
     
     def process_file (self, dirname, basename):
@@ -53,7 +53,7 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 stamp.log ()
                 autoconf = blip.parsers.get_parsed_file (blip.parsers.autoconf.Autoconf,
                                                          self.scanner.branch, filename)
-                self.gettext_package = autoconf.get_variable ('GETTEXT_PACKAGE')
+                self.scanner.branch.data['gettext_package'] = autoconf.get_variable ('GETTEXT_PACKAGE')
         elif basename == 'POTFILES.in':
             self.podirs.append (dirname)
 
@@ -64,16 +64,16 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     def post_process_dir (self, dirname):
         bserver, bmodule, bbranch = self.scanner.branch.ident.split('/')[2:]
 
-        gettext_package = self.gettext_package
+        gettext_package = self.scanner.branch.data.get ('gettext_package', '')
         filename = os.path.join (dirname, 'Makefile.in.in')
         if os.path.exists (filename):
             makefile = blip.parsers.get_parsed_file (blip.parsers.automake.Automake,
                                                      self.scanner.branch, filename)
             if makefile.has_key ('GETTEXT_PACKAGE'):
                 gettext_package = makefile['GETTEXT_PACKAGE'].replace ('@GETTEXT_PACKAGE@',
-                                                                       self.gettext_package)
+                                                                       gettext_package)
 
-        if self.gettext_package is None:
+        if gettext_package in (None, ''):
             blip.utils.warn ('Could not determine gettext package for %s' % self.scanner.branch.ident)
             return
 
@@ -154,7 +154,7 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             try:
                 os.chdir (podir)
                 stamp.log ()
-                popo = blip.parsers.po (self.scanner.branch, os.popen (cmd))
+                popo = blip.parsers.po.Po (self.scanner.branch, os.popen (cmd))
                 stats = popo.get_stats ()
                 total = stats[0] + stats[1] + stats[2]
                 blip.db.Statistic.set_statistic (translation,
@@ -199,8 +199,8 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     @classmethod
     def get_potfile (cls, translation, scanner):
         domain = translation.parent
-        indir = os.path.dirname (os.path.join (scanner.repository.directory,
-                                               domain.scm_dir))
+        indir = os.path.join (scanner.repository.directory,
+                              domain.scm_dir)
         if cls.potfiles.has_key (indir):
             return cls.potfiles[indir]
 
