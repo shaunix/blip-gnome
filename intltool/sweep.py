@@ -88,30 +88,34 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         domain.scm_dir = blip.utils.relative_path (dirname,
                                                    self.scanner.repository.directory)
 
-        linguas = os.path.join (dirname, 'LINGUAS')
-        if not os.path.isfile (linguas):
+        langs = []
+        translations = []
+        filename = os.path.join (dirname, 'LINGUAS')
+        if os.path.isfile (filename):
+            with blip.db.Timestamp.stamped (filename, self.scanner.repository) as stamp:
+                try:
+                    stamp.check (self.scanner.request.get_tool_option ('timestamps'))
+                except:
+                    translations = list(blip.db.Branch.select_children (domain, u'Translation'))
+                    raise
+                stamp.log ()
+                fd = open (filename)
+                for line in fd:
+                    if line.startswith ('#') or line == '\n':
+                        continue
+                    for lang in line.split ():
+                        langs.append (lang)
+                if gettext_package == self.scanner.branch.data.get ('gettext_package', ''):
+                    self.scanner.branch.data['gettext_linguas'] = langs
+        elif self.scanner.branch.data.has_key ('gettext_linguas'):
+            langs = self.scanner.branch.data['gettext_linguas']
+        else:
             blip.db.Error.set_error (domain.ident,
                                      blip.utils.gettext ('No LINGUAS file'))
             return
         blip.db.Error.clear_error (domain.ident)
 
-        filename = os.path.join (dirname, 'POTFILES.in')
-        translations = []
-        with blip.db.Timestamp.stamped (filename, self.scanner.repository) as stamp:
-            try:
-                stamp.check (self.scanner.request.get_tool_option ('timestamps'))
-            except:
-                translations = list(blip.db.Branch.select_children (domain, u'Translation'))
-                raise
-            stamp.log ()
-
-            langs = []
-            fd = open (linguas)
-            for line in fd:
-                if line.startswith ('#') or line == '\n':
-                    continue
-                for lang in line.split ():
-                    langs.append (lang)
+        if len(langs) > 0:
             for lang in langs:
                 lident = u'/l10n/' + lang + domain.ident
                 translation = blip.db.Branch.get_or_create (lident, u'Translation')
