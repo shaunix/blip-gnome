@@ -31,6 +31,14 @@ except:
     from md5 import new as md5
 
 import libxml2
+# Raptor installs global error hooks in libxml2, possibly when it gets
+# imported by another plugin. And for some reason, if we don't import
+# RDF in this module, we get a segfault (!) whenever libxml2 has an
+# otherwise-recoverable error.
+try:
+    import RDF
+except:
+    pass
 
 import blinq.config
 
