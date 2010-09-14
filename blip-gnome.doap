@@ -1,0 +1,23 @@
+<Project xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+         xmlns:foaf="http://xmlns.com/foaf/0.1/"
+         xmlns="http://usefulinc.com/ns/doap#">
+
+  <name xml:lang="en">Blip GNOME</name>
+  <shortdesc xml:lang="en">Blip plugins for GNOME</shortdesc>
+
+  <homepage rdf:resource="http://blip-monitor.com/"/>
+
+  <maintainer>
+    <foaf:Person>
+      <foaf:name>Shaun McCance</foaf:name>
+      <foaf:mbox rdf:resource="mailto:shaunm@gnome.org" />
+    </foaf:Person>
+  </maintainer>
+
+  <repository>
+    <GitRepository>
+      <location rdf:resource="git://git.gitorious.org/blip/blip-gnome.git"/>
+    </GitRepository>
+  </repository>
+</Project>
