@@ -80,6 +80,7 @@ class IntltoolScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         ident = u'/'.join(['/i18n', bserver, bmodule, gettext_package, bbranch])
 
         domain = blip.db.Branch.get_or_create (ident, u'Domain')
+        domain.name = blip.utils.utf8dec (gettext_package)
         domain.parent = self.scanner.branch
         self.scanner.add_child (domain)
 

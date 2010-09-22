@@ -20,10 +20,15 @@
 
 import ConfigParser
 import re
+import subprocess
+import cStringIO
 import os
 
 import blip.db
 import blip.utils
+
+import blip.parsers
+import blip.parsers.autoconf
 
 import blip.plugins.modules.sweep
 
@@ -32,10 +37,29 @@ class KeyFileScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     ModuleFileScanner plugin for XDG applications.
     """
 
-    def process_file (self, dirname, basename):
-        if not re.match ('.*\.desktop(\.in)+$', basename):
-            return
+    def __init__ (self, scanner):
+        blip.plugins.modules.sweep.ModuleFileScanner.__init__ (self, scanner)
+        self._autoconf = None
+        self._desktop_files = []
+        self._commons = {}
 
+    def process_file (self, dirname, basename):
+        if dirname == self.scanner.repository.directory:
+            if basename in ('configure.ac', 'configure.in'):
+                self._autoconf = blip.parsers.get_parsed_file (blip.parsers.autoconf.Autoconf,
+                                                               self.scanner.branch,
+                                                               os.path.join (dirname, basename))
+                return
+        if basename == 'common.desktop.in':
+            self._commons[dirname] = basename
+        if re.match ('.*\.desktop(\.in)+$', basename):
+            self._desktop_files.append ((dirname, basename))
+
+    def post_process (self):
+        for dirname, basename in self._desktop_files:
+            self.post_process_file (dirname, basename)
+
+    def post_process_file (self, dirname, basename):
         filename = os.path.join (dirname, basename)
         rel_ch = blip.utils.relative_path (os.path.join (dirname, filename),
                                            self.scanner.repository.directory)
@@ -56,7 +80,30 @@ class KeyFileScanner (blip.plugins.modules.sweep.ModuleFileScanner):
 
             stamp.log ()
 
+            contents = file(filename).read()
+
+            # Some packages put common stuff in a common.desktop file and
+            # merge them in at build time. Handle that.
+            common = self._commons.get (dirname, None)
+            if common is not None:
+                common = file(os.path.join(dirname, common)).read()
+                if not common.startswith('[Desktop Entry]\n'):
+                    common = '[Desktop Entry]\n' + common
+                contents = common + contents
+
             if basename.endswith ('.desktop.in.in'):
+                if self._autoconf is not None:
+                    atre = re.compile ('^([^@]*)(@[^@]+@)(.*)$')
+                    def subsvar (line):
+                        match = atre.match (line)
+                        if match is None:
+                            return line
+                        ret = match.group(1)
+                        ret += self._autoconf.get_variable (match.group(2)[1:-1], match.group(2))
+                        ret += subsvar (match.group(3))
+                        return ret
+                    lines = [subsvar(line) for line in contents.split('\n')]
+                    contents = '\n'.join (lines)
                 base = os.path.basename (filename)[:-14]
             else:
                 base = os.path.basename (filename)[:-11]
@@ -65,8 +112,12 @@ class KeyFileScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             try:
                 try:
                     os.chdir (self.scanner.repository.directory)
-                    keyfile = KeyFile (
-                        os.popen ('LC_ALL=C intltool-merge -d -q -u po "' + rel_ch + '" -'))
+                    popen = subprocess.Popen (
+                        'LC_ALL=C intltool-merge -d -q -u po - -',
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        shell=True)
+                    contents, rv = popen.communicate (contents)
+                    keyfile = KeyFile (cStringIO.StringIO (contents))
                 finally:
                     os.chdir (owd)
             except Exception, e:
@@ -80,7 +131,6 @@ class KeyFileScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 return
 
             ident = u'/'.join(['/app', bserver, bmodule, base, bbranch])
-
             self.app = blip.db.Branch.get_or_create (ident, u'Application')
 
             name = keyfile.get_value ('Desktop Entry', 'Name')
