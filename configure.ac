@@ -10,6 +10,11 @@ PKG_CHECK_MODULES(BLIP_GNOME,
 	blip >= 0.9
 ])
 
+AC_CHECK_PROG(DOT, dot, dot)
+if test x"$DOT" = x; then
+  AC_MSG_ERROR([dot not found])
+fi
+
 BLIP_PLUGINS_DIR="`$PKG_CONFIG --variable pluginsdir blip`"
 AC_SUBST(BLIP_PLUGINS_DIR)
 
