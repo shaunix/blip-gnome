@@ -22,6 +22,7 @@ import commands
 import ConfigParser
 import datetime
 import re
+import subprocess
 import os
 import urllib
 
@@ -51,6 +52,8 @@ import blip.parsers.automake
 import blip.parsers.po
 
 import blip.plugins.modules.sweep
+
+MALLARD_NS = 'http://projectmallard.org/1.0/'
 
 _STATUSES = {'none':       '00',
              'stub':       '10',
@@ -294,7 +297,10 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
 
     @classmethod
     def process_mallard (cls, document, scanner):
-        MALLARD_NS = 'http://projectmallard.org/1.0/'
+        cache = blip.db.CacheData.get ((document.ident, u'mallard-pages'))
+        if cache is None:
+            cache = blip.db.CacheData (ident=document.ident,
+                                       key=u'mallard-pages')
 
         for basename in document.data.get ('scm_files', []):
             filename = os.path.join (scanner.repository.directory,
@@ -302,131 +308,203 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             with blip.db.Timestamp.stamped (filename, scanner.repository) as stamp:
                 stamp.check (scanner.request.get_tool_option ('timestamps'))
                 stamp.log ()
+                cls.process_mallard_page (document, filename, cache, scanner)
 
-                title = None
-                desc = None
-                credits = []
-                try:
-                    ctxt = libxml2.newParserCtxt ()
-                    xmldoc = ctxt.ctxtReadFile (filename, None, 0)
-                    xmldoc.xincludeProcess ()
-                    root = xmldoc.getRootElement ()
-                except Exception, e:
-                    blip.db.Error.set_error (document.ident, unicode (e),
-                                             ctxt=document.scm_file)
-                    return
-                blip.db.Error.clear_error (document.ident,
-                                           ctxt=document.scm_file)
+        doccredits = {}
+        topiclinks = {}
+        for pageid in cache.data.keys():
+            if pageid.startswith('/'):
+                continue
+            for cr_name, cr_email, cr_types in cache.data[pageid].get('credits', []):
+                doccredits.setdefault (cr_email, {})
+                doccredits[cr_email].setdefault ('name', cr_name)
+                for badge in ('maintainer', 'author','editor', 'publisher'):
+                    doccredits[cr_email].setdefault (badge, False)
+                    if badge in cr_types:
+                        doccredits[cr_email][badge] = True
+            topiclinks.setdefault (pageid, [])
+            for xref in cache.data[pageid]['topiclinks']:
+                if xref not in topiclinks[pageid]:
+                    topiclinks[pageid].append (xref)
+            for xref in cache.data[pageid]['guidelinks']:
+                topiclinks.setdefault (xref, [])
+                if pageid not in topiclinks[xref]:
+                    topiclinks[xref].append (pageid)
+        rels = []
+        for cr_email in doccredits.keys():
+            if cr_email is not None:
+                ent = blip.db.Entity.get_or_create_email (cr_email)
+            if ent is None:
+                ident = u'/ghost/' + urllib.quote (cr_name)
+                ent = blip.db.Entity.get_or_create (ident, u'Ghost')
+            if ent is not None:
+                rel = blip.db.DocumentEntity.set_related (document, ent)
+                for badge in ('maintainer', 'author', 'editor', 'pulisher'):
+                    setattr (rel, badge, badge in cr_types)
+                rels.append (rel)
+        document.set_relations (blip.db.DocumentEntity, rels)
+        dot = ''
+        for pageid in sorted (topiclinks.keys()):
+            for xref in sorted (topiclinks[pageid]):
+                dot += ('"%s" -> "%s";\n' % (pageid, xref))
+        if dot != cache.data.get('/dot', ''):
+            of = blip.db.OutputFile.select_one (type=u'graphs', ident=document.ident, filename=u'topiclinks.svg')
+            if of is None:
+                of = blip.db.OutputFile (type=u'graphs', ident=document.ident,
+                                         filename=u'topiclinks.svg',
+                                         datetime=datetime.datetime.now())
+            of.makedirs ()
+            outfile = of.get_file_path ()
+            outfile_rel = blip.utils.relative_path (outfile,
+                                                    os.path.join (blinq.config.web_files_dir, 'graphs'))
+            blip.utils.log ('Creating link graph %s' % outfile_rel)
+            fulldot = ('strict digraph topics {\n' +
+                       'width="3";\n' +
+                       'rankdir="LR";\n' +
+                       'splines="ortho";\n' +
+                       'node [shape=box,width=2,fontname=sans,fontsize=10];\n' +
+                       dot + '}\n')
+            popen = subprocess.Popen (['dot', '-Tsvg', '-o', outfile], stdin=subprocess.PIPE)
+            popen.communicate (fulldot)
 
-                if not _is_ns_name (root, MALLARD_NS, 'page'):
-                    continue
-                pageid = root.prop ('id')
-                pkgseries = document.parent.data.get ('pkgseries', None)
-                revision = {}
-                for node in xmliter (root):
-                    if node.type != 'element':
+
+    @classmethod
+    def process_mallard_page (cls, document, filename, cache, scanner):
+        title = None
+        desc = None
+        try:
+            ctxt = libxml2.newParserCtxt ()
+            xmldoc = ctxt.ctxtReadFile (filename, None, 0)
+            xmldoc.xincludeProcess ()
+            root = xmldoc.getRootElement ()
+        except Exception, e:
+            blip.db.Error.set_error (document.ident, unicode (e),
+                                     ctxt=document.scm_file)
+            return
+        blip.db.Error.clear_error (document.ident,
+                                   ctxt=document.scm_file)
+
+        if not _is_ns_name (root, MALLARD_NS, 'page'):
+            return
+        pageid = root.prop ('id')
+        cache.data.setdefault (pageid, {})
+        cache.data[pageid]['topiclinks'] = []
+        cache.data[pageid]['guidelinks'] = []
+        pkgseries = document.parent.data.get ('pkgseries', None)
+        revision = {}
+        def process_link_node (linknode):
+            linktype = linknode.prop ('type')
+            if linktype not in ('topic', 'guide'):
+                return
+            xref = linknode.prop ('xref')
+            xrefhash = xref.find ('#')
+            if xrefhash >= 0:
+                xref = xref[:xrefhash]
+            if xref != '':
+                lst = cache.data[pageid][linktype + 'links']
+                if xref not in lst:
+                    lst.append (xref)
+        for node in xmliter (root):
+            if node.type != 'element':
+                continue
+            if _is_ns_name (node, MALLARD_NS, 'info'):
+                for infonode in xmliter (node):
+                    if infonode.type != 'element':
                         continue
-                    if _is_ns_name (node, MALLARD_NS, 'info'):
-                        for infonode in xmliter (node):
+                    if _is_ns_name (infonode, MALLARD_NS, 'title'):
+                        if infonode.prop ('type') == 'text':
+                            title = normalize (infonode.getContent ())
+                    elif _is_ns_name (infonode, MALLARD_NS, 'desc'):
+                        desc = normalize (infonode.getContent ())
+                    elif _is_ns_name (infonode, MALLARD_NS, 'revision'):
+                        if pkgseries is not None:
+                            for prop in ('version', 'docversion', 'pkgversion'):
+                                if infonode.prop (prop) == pkgseries:
+                                    revdate = infonode.prop ('date')
+                                    revstatus = infonode.prop ('status')
+                                    if (not revision.has_key (prop)) or (revdate > revision[prop][0]):
+                                        revision[prop] = (revdate, revstatus)
+                    elif _is_ns_name (infonode, MALLARD_NS, 'credit'):
+                        types = infonode.prop ('type')
+                        if isinstance (types, basestring):
+                            types = types.split ()
+                        else:
+                            types = []
+                        crname = cremail = None
+                        for crnode in xmliter (infonode):
+                            if _is_ns_name (crnode, MALLARD_NS, 'name'):
+                                crname = normalize (crnode.getContent ())
+                            elif _is_ns_name (crnode, MALLARD_NS, 'email'):
+                                cremail = normalize (crnode.getContent ())
+                        if crname is not None or cremail is not None:
+                            cache.data[pageid].setdefault ('credits', [])
+                            cache.data[pageid]['credits'].append (
+                                (crname, cremail, types))
+                    elif _is_ns_name (infonode, MALLARD_NS, 'link'):
+                        process_link_node (infonode)
+            elif _is_ns_name (node, MALLARD_NS, 'title'):
+                if title is None:
+                    title = normalize (node.getContent ())
+            elif _is_ns_name (node, MALLARD_NS, 'section'):
+                for child in xmliter (node):
+                    if child.type != 'element':
+                        continue
+                    if _is_ns_name (child, MALLARD_NS, 'info'):
+                        for infonode in xmliter (child):
                             if infonode.type != 'element':
                                 continue
-                            if _is_ns_name (infonode, MALLARD_NS, 'title'):
-                                if infonode.prop ('type') == 'text':
-                                    title = normalize (infonode.getContent ())
-                            elif _is_ns_name (infonode, MALLARD_NS, 'desc'):
-                                desc = normalize (infonode.getContent ())
-                            elif _is_ns_name (infonode, MALLARD_NS, 'revision'):
-                                if pkgseries is not None:
-                                    for prop in ('version', 'docversion', 'pkgversion'):
-                                        if infonode.prop (prop) == pkgseries:
-                                            revdate = infonode.prop ('date')
-                                            revstatus = infonode.prop ('status')
-                                            if (not revision.has_key (prop)) or (revdate > revision[prop][0]):
-                                                revision[prop] = (revdate, revstatus)
-                            elif _is_ns_name (infonode, MALLARD_NS, 'credit'):
-                                types = infonode.prop ('type')
-                                if isinstance (types, basestring):
-                                    types = types.split ()
-                                else:
-                                    types = []
-                                crname = cremail = None
-                                for crnode in xmliter (infonode):
-                                    if _is_ns_name (crnode, MALLARD_NS, 'name'):
-                                        crname = normalize (crnode.getContent ())
-                                    elif _is_ns_name (crnode, MALLARD_NS, 'email'):
-                                        cremail = normalize (crnode.getContent ())
-                                if crname is not None or cremail is not None:
-                                    credits.append ((crname, cremail, types))
-                    elif _is_ns_name (node, MALLARD_NS, 'title'):
-                        if title is None:
-                            title = normalize (node.getContent ())
+                            if _is_ns_name (infonode, MALLARD_NS, 'link'):
+                                process_link_node (infonode)
 
-                docstatus = None
-                docdate = None
-                if pageid is not None:
-                    ident = u'/page/' + pageid + document.ident
-                    page = blip.db.Branch.get_or_create (ident, u'DocumentPage')
-                    page.parent = document
-                    for key in ('scm_type', 'scm_server', 'scm_module', 'scm_branch', 'scm_path', 'scm_dir'):
-                        setattr (page, key, getattr (document, key))
-                    page.scm_file = basename
-                    if title is not None:
-                        page.name = blip.utils.utf8dec (title)
-                    if desc is not None:
-                        page.desc = blip.utils.utf8dec (desc)
-                    for prop in ('pkgversion', 'docversion', 'version'):
-                        if revision.has_key (prop):
-                            (docdate, docstatus) = revision[prop]
-                            docstatus = get_status (docstatus)
-                            page.data['docstatus'] = docstatus
-                            page.data['docdate'] = docdate
-                    rels = []
-                    for cr_name, cr_email, cr_types in credits:
-                        ent = None
-                        if cr_email is not None:
-                            ent = blip.db.Entity.get_or_create_email (cr_email)
-                        if ent is None:
-                            ident = u'/ghost/' + urllib.quote (cr_name)
-                            ent = blip.db.Entity.get_or_create (ident, u'Ghost')
-                            if ent.ident == ident:
-                                ent.name = blip.utils.utf8dec (cr_name)
-                        if ent is not None:
-                            ent.extend (name=blip.utils.utf8dec (cr_name))
-                            ent.extend (email=blip.utils.utf8dec (cr_email))
-                            rel = blip.db.DocumentEntity.set_related (page, ent)
-                            for badge in ('maintainer', 'author', 'editor', 'pulisher'):
-                                setattr (rel, badge, badge in cr_types)
-                            rels.append (rel)
-                    page.set_relations (blip.db.DocumentEntity, rels)
+        docstatus = None
+        docdate = None
+        if pageid is not None:
+            ident = u'/page/' + pageid + document.ident
+            page = blip.db.Branch.get_or_create (ident, u'DocumentPage')
+            page.parent = document
+            for key in ('scm_type', 'scm_server', 'scm_module', 'scm_branch', 'scm_path', 'scm_dir'):
+                setattr (page, key, getattr (document, key))
+            page.scm_file = os.path.basename (filename)
+            if title is not None:
+                page.name = blip.utils.utf8dec (title)
+            if desc is not None:
+                page.desc = blip.utils.utf8dec (desc)
+            for prop in ('pkgversion', 'docversion', 'version'):
+                if revision.has_key (prop):
+                    (docdate, docstatus) = revision[prop]
+                    docstatus = get_status (docstatus)
+                    page.data['docstatus'] = docstatus
+                    page.data['docdate'] = docdate
+            rels = []
+            for cr_name, cr_email, cr_types in cache.data[pageid].get('credits', []):
+                ent = None
+                if cr_email is not None:
+                    ent = blip.db.Entity.get_or_create_email (cr_email)
+                if ent is None:
+                    ident = u'/ghost/' + urllib.quote (cr_name)
+                    ent = blip.db.Entity.get_or_create (ident, u'Ghost')
+                    if ent.ident == ident:
+                        ent.name = blip.utils.utf8dec (cr_name)
+                if ent is not None:
+                    ent.extend (name=blip.utils.utf8dec (cr_name))
+                    ent.extend (email=blip.utils.utf8dec (cr_email))
+                    rel = blip.db.DocumentEntity.set_related (page, ent)
+                    for badge in ('maintainer', 'author', 'editor', 'pulisher'):
+                        setattr (rel, badge, badge in cr_types)
+                    rels.append (rel)
+            page.set_relations (blip.db.DocumentEntity, rels)
 
-                if pageid == 'index':
-                    if title is not None:
-                        document.name = blip.utils.utf8dec (title)
-                    if desc is not None:
-                        document.desc = blip.utils.utf8dec (desc)
-                    document.data['docstatus'] = docstatus
-                    document.data['docdate'] = docdate
-                    rels = []
-                    for cr_name, cr_email, cr_types in credits:
-                        ent = None
-                        if cr_email is not None:
-                            ent = blip.db.Entity.get_or_create_email (cr_email)
-                        if ent is None:
-                            ident = u'/ghost/' + urllib.quote (cr_name)
-                            ent = blip.db.Entity.get_or_create (ident, u'Ghost')
-                            if ent.ident == ident:
-                                ent.name = blip.utils.utf8dec (cr_name)
-                        if ent is not None:
-                            ent.extend (name=blip.utils.utf8dec (cr_name))
-                            ent.extend (email=blip.utils.utf8dec (cr_email))
-                            rel = blip.db.DocumentEntity.set_related (document, ent)
-                            for badge in ('maintainer', 'author', 'editor', 'pulisher'):
-                                setattr (rel, badge, badge in cr_types)
-                            rels.append (rel)
-                    document.set_relations (blip.db.DocumentEntity, rels)
+        if pageid == 'index':
+            if title is not None:
+                document.name = blip.utils.utf8dec (title)
+            if desc is not None:
+                document.desc = blip.utils.utf8dec (desc)
+            document.data['docstatus'] = docstatus
+            document.data['docdate'] = docdate
 
     @classmethod
     def process_xml2po (cls, translation, scanner):
+        return
         filename = os.path.join (scanner.repository.directory,
                                  translation.scm_dir, translation.scm_file)
         potfile = cls.get_potfile (translation, scanner)
@@ -503,10 +581,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 cls.potfiles[indir] = of
                 return of
 
-        potdir = os.path.dirname (potfile_abs)
-        if not os.path.exists (potdir):
-            os.makedirs (potdir)
-
+        of.makedirs ()
         cmd = 'xml2po -e -o "' + potfile_abs + '" "' + '" "'.join(doc_files) + '"'
         owd = os.getcwd ()
         try:
