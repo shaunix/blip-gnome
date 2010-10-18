@@ -68,6 +68,16 @@ class JHBuildSetSweeper (blip.plugins.sets.sweep.SetSweeper):
                     continue
                 packages += moduleset.get_metamodule (module)
 
+        newpkgs = []
+        while len(packages) > 0:
+            pkg = packages.pop ()
+            if moduleset.has_package (pkg):
+                newpkgs.append (pkg)
+            elif moduleset.has_metamodule (pkg):
+                for npkg in moduleset.get_metamodule (pkg):
+                    packages.append (npkg)
+        packages = newpkgs
+
         rels = []
         for pkg in packages:
             # FIXME
