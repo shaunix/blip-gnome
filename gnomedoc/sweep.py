@@ -174,6 +174,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                     translation.parent = document
                 document.set_children (u'Translation', translations)
 
+            self.scanner.add_child (document)
             self.documents.append (document)
             for translation in translations:
                 self.translations.append (translation)
