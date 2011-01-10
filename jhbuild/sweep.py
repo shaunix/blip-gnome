@@ -183,11 +183,7 @@ class ModuleSet:
                             pkg_data['scm_type'] = repo_data['scm_type']
                             pkg_data['scm_server'] = repo_data['scm_server']
                         if child.hasAttribute ('module'):
-                            pkg_data['scm_path'] = child.getAttribute ('module')
-                            if child.hasAttribute ('checkoutdir'):
-                                pkg_data['scm_module'] = child.getAttribute ('checkoutdir')
-                            else:
-                                pkg_data['scm_module'] = pkg_data['id']
+                            pkg_data['scm_module'] = child.getAttribute ('module')
                         else:
                             pkg_data['scm_module'] = pkg_data['id']
                         if child.hasAttribute ('revision'):
