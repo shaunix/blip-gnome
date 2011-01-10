@@ -181,10 +181,11 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
 
     def post_process (self):
         for document in self.documents:
-            if document.subtype == u'gdu-docbook':
-                GnomeDocScanner.process_docbook (document, self.scanner)
-            elif document.subtype == u'gdu-mallard':
-                GnomeDocScanner.process_mallard (document, self.scanner)
+            with blip.db.Error.catch (document):
+                if document.subtype == u'gdu-docbook':
+                    GnomeDocScanner.process_docbook (document, self.scanner)
+                elif document.subtype == u'gdu-mallard':
+                    GnomeDocScanner.process_mallard (document, self.scanner)
             rev = blip.db.Revision.get_last_revision (branch=document.parent,
                                                       files=[os.path.join (document.scm_dir, fname)
                                                              for fname in document.data.get ('scm_files', [])])
