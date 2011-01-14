@@ -1,6 +1,7 @@
 SUBDIRS =		\
 	gnomeapp	\
 	gnomedoc	\
+	gnomescm	\
 	intltool	\
 	jhbuild
 
