@@ -182,10 +182,9 @@ class ModuleSet:
                         if repo_data != None:
                             pkg_data['scm_type'] = repo_data['scm_type']
                             pkg_data['scm_server'] = repo_data['scm_server']
+                        pkg_data['scm_module'] = pkg_data['id']
                         if child.hasAttribute ('module'):
-                            pkg_data['scm_module'] = child.getAttribute ('module')
-                        else:
-                            pkg_data['scm_module'] = pkg_data['id']
+                            pkg_data['scm_path'] = child.getAttribute ('module')
                         if child.hasAttribute ('revision'):
                             pkg_data['scm_branch'] = child.getAttribute ('revision')
                         else:
