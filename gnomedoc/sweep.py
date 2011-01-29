@@ -334,6 +334,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                     topiclinks[xref].append (pageid)
         rels = []
         for cr_email in doccredits.keys():
+            ent = None
             if cr_email is not None:
                 ent = blip.db.Entity.get_or_create_email (cr_email)
             if ent is None:
