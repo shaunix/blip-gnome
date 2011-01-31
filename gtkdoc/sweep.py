@@ -106,7 +106,7 @@ class GtkDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
 
             scm_file = makefile['DOC_MAIN_SGML_FILE']
             if '$(DOC_MODULE)' in scm_file:
-                scm_file = scm_file.replace ('$(DOC_MODULE)', doc_module)
+                scm_file = scm_file.replace ('$(DOC_MODULE)', doc_id)
             document.scm_file = scm_file
 
             self.scanner.add_child (document)
