@@ -1,9 +1,10 @@
-SUBDIRS =		\
-	gnomeapp	\
-	gnomedoc	\
-	gnomescm	\
-	gtkdoc		\
-	intltool	\
+SUBDIRS =			\
+	evolutionquickref	\
+	gnomeapp		\
+	gnomedoc		\
+	gnomescm		\
+	gtkdoc			\
+	intltool		\
 	jhbuild
 
 EXTRA_DIST = ChangeLog

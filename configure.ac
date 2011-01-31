@@ -20,6 +20,7 @@ AC_SUBST(BLIP_PLUGINS_DIR)
 
 AC_CONFIG_FILES([
 Makefile
+evolutionquickref/Makefile
 gnomeapp/Makefile
 gnomedoc/Makefile
 gnomescm/Makefile
