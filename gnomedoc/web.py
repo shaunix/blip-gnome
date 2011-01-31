@@ -26,7 +26,7 @@ import blip.db
 import blip.html
 import blip.utils
 
-class DevelopersTab (blip.html.TabProvider):
+class PageGraphTab (blip.html.TabProvider):
     @classmethod
     def add_tabs (cls, page, request):
         if len(request.path) < 1 or request.path[0] != 'doc':
