@@ -209,7 +209,9 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         credits = []
         try:
             ctxt = libxml2.newParserCtxt ()
-            xmldoc = ctxt.ctxtReadFile (filename, None, 0)
+            xmldoc = ctxt.ctxtReadFile (filename, None,
+                                        libxml2.XML_PARSE_DTDLOAD | libxml2.XML_PARSE_NOCDATA |
+                                        libxml2.XML_PARSE_NOENT | libxml2.XML_PARSE_NONET)
             xmldoc.xincludeProcess ()
             root = xmldoc.getRootElement ()
         except Exception, e:
@@ -377,7 +379,9 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         desc = None
         try:
             ctxt = libxml2.newParserCtxt ()
-            xmldoc = ctxt.ctxtReadFile (filename, None, 0)
+            xmldoc = ctxt.ctxtReadFile (filename, None,
+                                        libxml2.XML_PARSE_DTDLOAD | libxml2.XML_PARSE_NOCDATA |
+                                        libxml2.XML_PARSE_NOENT | libxml2.XML_PARSE_NONET)
             xmldoc.xincludeProcess ()
             root = xmldoc.getRootElement ()
         except Exception, e:

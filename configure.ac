@@ -23,6 +23,7 @@ Makefile
 gnomeapp/Makefile
 gnomedoc/Makefile
 gnomescm/Makefile
+gtkdoc/Makefile
 intltool/Makefile
 jhbuild/Makefile
 ])
