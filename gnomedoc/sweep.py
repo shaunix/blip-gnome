@@ -32,14 +32,6 @@ except:
     from md5 import new as md5
 
 import libxml2
-# Raptor installs global error hooks in libxml2, possibly when it gets
-# imported by another plugin. And for some reason, if we don't import
-# RDF in this module, we get a segfault (!) whenever libxml2 has an
-# otherwise-recoverable error.
-try:
-    import RDF
-except:
-    pass
 
 import blinq.config
 
@@ -187,8 +179,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 elif document.subtype == u'gdu-mallard':
                     GnomeDocScanner.process_mallard (document, self.scanner)
             rev = blip.db.Revision.get_last_revision (branch=document.parent,
-                                                      files=[os.path.join (document.scm_dir, fname)
-                                                             for fname in document.data.get ('scm_files', [])])
+                                                      files=[os.path.join (document.scm_dir, document.scm_file)])
             if rev is not None:
                 document.mod_datetime = rev.datetime
                 document.mod_person = rev.person

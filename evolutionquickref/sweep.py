@@ -18,6 +18,7 @@
 # Suite 330, Boston, MA  0211-1307  USA.
 #
 
+import datetime
 import re
 import os
 
@@ -65,10 +66,9 @@ class GtkDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                     self.document = doc
                 raise
 
+            stamp.log ()
             makefile = blip.parsers.get_parsed_file (blip.parsers.automake.Automake,
                                                      self.scanner.branch, filename)
-
-            stamp.log ()
 
             ident = u'/'.join(['/doc', bserver, bmodule, 'quickref', bbranch])
             document = blip.db.Branch.get_or_create (ident, u'Document')
@@ -107,9 +107,10 @@ class GtkDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                                  self.document.scm_dir, self.document.scm_file)
         with blip.db.Timestamp.stamped (filename, self.scanner.repository) as stamp:
             stamp.check (self.scanner.request.get_tool_option ('timestamps'))
+            stamp.log ()
             for line in open(filename):
                 match = regexp.match (line)
                 if match:
                     self.document.name = blip.utils.utf8dec (match.group(1))
                     break
-            stamp.log ()
+            self.document.updated = datetime.datetime.utcnow ()
