@@ -116,4 +116,9 @@ class GtkDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         for document in self.documents:
             with blip.db.Error.catch (document):
                 GnomeDocScanner.process_docbook (document, self.scanner)
+            rev = blip.db.Revision.get_last_revision (branch=document.parent,
+                                                      files=[os.path.join (document.scm_dir, document.scm_file)])
+            if rev is not None:
+                document.mod_datetime = rev.datetime
+                document.mod_person = rev.person
             document.updated = datetime.datetime.utcnow ()

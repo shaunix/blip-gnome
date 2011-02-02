@@ -179,7 +179,8 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 elif document.subtype == u'gdu-mallard':
                     GnomeDocScanner.process_mallard (document, self.scanner)
             rev = blip.db.Revision.get_last_revision (branch=document.parent,
-                                                      files=[os.path.join (document.scm_dir, document.scm_file)])
+                                                      files=[os.path.join (document.scm_dir, fname)
+                                                             for fname in document.data.get ('scm_files', [])])
             if rev is not None:
                 document.mod_datetime = rev.datetime
                 document.mod_person = rev.person
@@ -187,6 +188,13 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         for translation in self.translations:
             if translation.subtype == u'xml2po':
                 GnomeDocScanner.process_xml2po (translation, self.scanner)
+            rev = blip.db.Revision.get_last_revision (branch=document.parent,
+                                                      files=[os.path.join (translation.scm_dir,
+                                                                           translation.scm_file)])
+            if rev is not None:
+                translation.mod_datetime = rev.datetime
+                translation.mod_person = rev.person
+            translation.updated = datetime.datetime.utcnow()
 
     @classmethod
     def process_docbook (cls, document, scanner):

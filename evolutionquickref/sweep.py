@@ -30,7 +30,7 @@ import blip.parsers.automake
 
 import blip.plugins.modules.sweep
 
-class GtkDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
+class QuickRefScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     def __init__ (self, scanner):
         self.document = None
         blip.plugins.modules.sweep.ModuleFileScanner.__init__ (self, scanner)
@@ -113,4 +113,19 @@ class GtkDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 if match:
                     self.document.name = blip.utils.utf8dec (match.group(1))
                     break
-            self.document.updated = datetime.datetime.utcnow ()
+        rev = blip.db.Revision.get_last_revision (branch=self.document.parent,
+                                                  files=[os.path.join (self.document.scm_dir,
+                                                                       self.document.scm_file)])
+        if rev is not None:
+            self.document.mod_datetime = rev.datetime
+            self.document.mod_person = rev.person
+        self.document.updated = datetime.datetime.utcnow ()
+
+        for translation in blip.db.Branch.select (type=u'Translation', parent=self.document):
+            rev = blip.db.Revision.get_last_revision (branch=self.document.parent,
+                                                      files=[os.path.join (translation.scm_dir,
+                                                                           translation.scm_file)])
+            if rev is not None:
+                translation.mod_datetime = rev.datetime
+                translation.mod_person = rev.person
+            translation.updated = datetime.datetime.utcnow()
