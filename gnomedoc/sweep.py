@@ -172,7 +172,7 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
                 self.translations.append (translation)
 
     def post_process (self):
-        for document in self.documents:
+        for document in self.documents: 
             with blip.db.Error.catch (document):
                 if document.subtype == u'gdu-docbook':
                     GnomeDocScanner.process_docbook (document, self.scanner)
@@ -206,17 +206,17 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
         title = None
         abstract = None
         credits = []
-        try:
+        process = False
+        with blip.db.Error.catch (document):
             ctxt = libxml2.newParserCtxt ()
             xmldoc = ctxt.ctxtReadFile (filename, None,
                                         libxml2.XML_PARSE_DTDLOAD | libxml2.XML_PARSE_NOCDATA |
                                         libxml2.XML_PARSE_NOENT | libxml2.XML_PARSE_NONET)
             xmldoc.xincludeProcess ()
             root = xmldoc.getRootElement ()
-        except Exception, e:
-            blip.db.Error.set_error (document.ident, unicode (e))
+            process = True
+        if not process:
             return
-        blip.db.Error.clear_error (document.ident)
         seen = 0
         document.data['status'] = '00none'
         for node in xmliter (root):
@@ -376,20 +376,17 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     def process_mallard_page (cls, document, filename, cache, scanner):
         title = None
         desc = None
-        try:
+        process = False
+        with blip.db.Error.catch (document):
             ctxt = libxml2.newParserCtxt ()
             xmldoc = ctxt.ctxtReadFile (filename, None,
                                         libxml2.XML_PARSE_DTDLOAD | libxml2.XML_PARSE_NOCDATA |
                                         libxml2.XML_PARSE_NOENT | libxml2.XML_PARSE_NONET)
             xmldoc.xincludeProcess ()
             root = xmldoc.getRootElement ()
-        except Exception, e:
-            blip.db.Error.set_error (document.ident, unicode (e),
-                                     ctxt=document.scm_file)
+            process = True
+        if not process:
             return
-        blip.db.Error.clear_error (document.ident,
-                                   ctxt=document.scm_file)
-
         if not _is_ns_name (root, MALLARD_NS, 'page'):
             return
         pageid = root.prop ('id')
