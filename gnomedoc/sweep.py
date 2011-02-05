@@ -305,13 +305,15 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             cache = blip.db.CacheData (ident=document.ident,
                                        key=u'mallard-pages')
 
+        print document.data.get('scm_files')
         for basename in document.data.get ('scm_files', []):
             filename = os.path.join (scanner.repository.directory,
                                      document.scm_dir, basename)
-            with blip.db.Timestamp.stamped (filename, scanner.repository) as stamp:
-                stamp.check (scanner.request.get_tool_option ('timestamps'))
-                stamp.log ()
-                cls.process_mallard_page (document, filename, cache, scanner)
+            with blip.db.Error.catch (document, ctxt=basename):
+                with blip.db.Timestamp.stamped (filename, scanner.repository) as stamp:
+                    stamp.check (scanner.request.get_tool_option ('timestamps'))
+                    stamp.log ()
+                    cls.process_mallard_page (document, filename, cache, scanner)
 
         doccredits = {}
         topiclinks = {}
@@ -376,17 +378,12 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
     def process_mallard_page (cls, document, filename, cache, scanner):
         title = None
         desc = None
-        process = False
-        with blip.db.Error.catch (document):
-            ctxt = libxml2.newParserCtxt ()
-            xmldoc = ctxt.ctxtReadFile (filename, None,
-                                        libxml2.XML_PARSE_DTDLOAD | libxml2.XML_PARSE_NOCDATA |
-                                        libxml2.XML_PARSE_NOENT | libxml2.XML_PARSE_NONET)
-            xmldoc.xincludeProcess ()
-            root = xmldoc.getRootElement ()
-            process = True
-        if not process:
-            return
+        ctxt = libxml2.newParserCtxt ()
+        xmldoc = ctxt.ctxtReadFile (filename, None,
+                                    libxml2.XML_PARSE_DTDLOAD | libxml2.XML_PARSE_NOCDATA |
+                                    libxml2.XML_PARSE_NOENT | libxml2.XML_PARSE_NONET)
+        xmldoc.xincludeProcess ()
+        root = xmldoc.getRootElement ()
         if not _is_ns_name (root, MALLARD_NS, 'page'):
             return
         pageid = root.prop ('id')
