@@ -305,7 +305,6 @@ class GnomeDocScanner (blip.plugins.modules.sweep.ModuleFileScanner):
             cache = blip.db.CacheData (ident=document.ident,
                                        key=u'mallard-pages')
 
-        print document.data.get('scm_files')
         for basename in document.data.get ('scm_files', []):
             filename = os.path.join (scanner.repository.directory,
                                      document.scm_dir, basename)
